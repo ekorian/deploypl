@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""
+deloypl
+
+   deploypl UNIX script
+
+@author: K.Edeline
+"""
+import sys
+# TODO: /var/run/ & /var/log/ from config
+from deployer.deploypl import PLDeployer
+
+daemon = PLDeployer() 
+if len(sys.argv) == 2:
+   # sys.stdout.write('{} {}\n'.format(sys.argv[0],sys.argv[1]))
+
+   if 'start' == sys.argv[1]:
+      daemon.start()
+   elif 'stop' == sys.argv[1]:
+      daemon.stop()
+   elif 'restart' == sys.argv[1]:
+      daemon.restart()
+   elif 'status' == sys.argv[1]:
+      daemon.status()
+   else:
+      print ("Unknown command")
+      sys.exit(2)
+   sys.exit(0)
+else:
+   sys.stdout.write('show cmd deamon usage\n')
+   sys.stdout.write("Usage: {} start|stop|restart\n".format(sys.argv[0]))
+   sys.exit(2)
