@@ -7,26 +7,21 @@ deloypl
 @author: K.Edeline
 """
 import sys
-# TODO: /var/run/ & /var/log/ from config
 from deployer.deploypl import PLDeployer
 
-daemon = PLDeployer() 
-if len(sys.argv) == 2:
-   # sys.stdout.write('{} {}\n'.format(sys.argv[0],sys.argv[1]))
+pld = PLDeployer() 
+cmd = pld.args.cmd
+cmd_switch = {
+   'start'   : pld.start,
+   'stop'    : pld.stop,
+   'restart' : pld.restart,
+   'status'  : pld.status,
+}
 
-   if 'start' == sys.argv[1]:
-      daemon.start()
-   elif 'stop' == sys.argv[1]:
-      daemon.stop()
-   elif 'restart' == sys.argv[1]:
-      daemon.restart()
-   elif 'status' == sys.argv[1]:
-      daemon.status()
-   else:
-      print ("Unknown command")
-      sys.exit(2)
-   sys.exit(0)
+if cmd in cmd_switch:
+   retval = cmd_switch[cmd]()
+   sys.exit(retval)
 else:
-   sys.stdout.write('show cmd deamon usage\n')
-   sys.stdout.write("Usage: {} start|stop|restart\n".format(sys.argv[0]))
+   sys.stdout.write("{} command not found\n".format(cmd))
    sys.exit(2)
+

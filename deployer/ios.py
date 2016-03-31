@@ -7,15 +7,20 @@ ios.py
 """
 
 import sys
-import argparse, configparser, logging
+import argparse
+import configparser
+import logging
+import shutil
 
 
-class IOManager():
+class IOManager(object):
    """
 
    extend me
 
    """
+   DEFAULT_CONFIG_LOC="/tmp/deploypl.ini"
+
    def __init__(self, child=None, **kwargs):
 
       super().__init__(**kwargs)
@@ -36,7 +41,8 @@ class IOManager():
       """
       self.arguments()
       self.configuration()
-      self.log()
+      if 'start' in self.args.cmd:
+         self.log()
 
    ########################################################
    # ARGPARSE
@@ -53,26 +59,16 @@ class IOManager():
       #parser.add_argument('username', nargs=1, help='PlanetLab username', type=str)
       #parser.add_argument('login', nargs=1, help='PlanetLab website username', type=str)
       #parser.add_argument('password', nargs=1, help='PlanetLab website password', type=str)
-      parser.add_argument('cmd', nargs=1, help='start|stop|restart', type=str)
-
-      parser.add_argument('-r' , '--rtt', action='store_true',
-                         help='RTT analysis')
-     
-      parser.add_argument('-b' , '--bandwidth', action='store_true',
-                         help='bandwidth analysis')      
-      parser.add_argument('-j' , '--jitter', action='store_true',
-                         help='jitter analysis')     
-      parser.add_argument('-u' , '--udp-reordering', action='store_true',
-                         help='reordering analysis')    
-      parser.add_argument('-t' , '--ttl-spectrum', action='store_true',
-                         help='ttl spectrum analysis')    
+      parser.add_argument('cmd', help='start|stop|restart|status', type=str,
+                           choices=["start", "stop", "restart", "status"])
 
       parser.add_argument('-l' , '--log-file', type=str, default="deploypl.log",
                          help='log file location (default: deploypl.log)')
       parser.add_argument('-e' , '--error-file', type=str, default="errors.log",
                          help='error file location (default: error.log)')
 
-      parser.add_argument('-c' , '--config', type=str, default="./deploypl.ini",
+      parser.add_argument('-c' , '--config', type=str,
+                         default=IOManager.DEFAULT_CONFIG_LOC,
                          help='configuration file location')
       parser.add_argument('-d' , '--debug', action='store_true',
                          help='increase output level') 
@@ -99,13 +95,17 @@ class IOManager():
          print("Configuration file not found:", self.args.config)
          sys.exit(1)        
 
+      # copy cfg file to /tmp/
+      if self.args.config != IOManager.DEFAULT_CONFIG_LOC:
+         shutil.copyfile(self.args.config, IOManager.DEFAULT_CONFIG_LOC)
+
       return self.config
 
    ########################################################
    # LOGGING
    ########################################################
 
-   def log(self, console=False, logfile=True, errfile=True):
+   def log(self, console=False, logfile=True, errfile=False):
       """
       load logging facility
       """
@@ -122,7 +122,6 @@ class IOManager():
       if console:
          ch = logging.StreamHandler()
          ch.setLevel(logging.INFO if self.args.debug else logging.ERROR)
-
 
       # TODO
       #filehandler = logging.handlers.TimedRotatingFileHandler('/tmp/daemon.log',
@@ -150,16 +149,12 @@ class IOManager():
          eh.setFormatter(formatter)
          self.logger.addHandler(eh)
 
-
       # log functions
       self.debug    = self.logger.debug
       self.info     = self.logger.info
       self.warn     = self.logger.warn
       self.error    = self.logger.error
       self.critical = self.logger.critical
-
-
-      self.debug("configuration loaded")
 
       return self.logger
 
