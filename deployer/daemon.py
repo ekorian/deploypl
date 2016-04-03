@@ -8,6 +8,8 @@ daemon.py
 
 import sys
 import os
+import pwd
+import grp
 import time
 import atexit
 from signal import SIGTERM
@@ -38,10 +40,10 @@ class Daemon(object):
       self.name    = name
 
       self.cwd     = os.getcwd()
- 
-   def daemonize(self):
+
+   def _fork(self):
       """
-      Daemonize, do double-fork magic.
+      Fork, exit parent and returns pid
       """
       try:
          pid = os.fork()
@@ -49,9 +51,17 @@ class Daemon(object):
             # Exit first parent.
             sys.exit(0)
       except OSError as e:
-         message = "Fork #1 failed: {}\n".format(e)
+         message = "fork failed: {}\n".format(e)
          sys.stderr.write(message)
          sys.exit(1)
+
+      return pid
+ 
+   def daemonize(self):
+      """
+      Daemonize, do double-fork magic.
+      """
+      pid = self._fork()
 
       # Decouple from parent environment.
       os.chdir("/")
@@ -59,28 +69,45 @@ class Daemon(object):
       os.umask(0)
 
       # Do the double fork, do the, do the double fork
-      try:
-         pid = os.fork()
-         if pid > 0:
-            # Exit from second parent.
-            sys.exit(0)
-      except OSError as e:
-         message = "Fork #2 failed: {}\n".format(e)
-         sys.stderr.write(message)
-         sys.exit(1)
+      pid = self._fork()
 
       # Write pidfile.
       pid = str(os.getpid())
-      open(self.pidfile,'w+').write("{}\n".format(pid))
+      with open(self.pidfile,'w+') as f:
+         f.write("{}\n".format(pid))
 
       # Register a function to clean up.
       atexit.register(self.delpid)
 
+      # drop privileges with seteuid to get it back atexit
+      self.drop_privileges()
+
       # Redirects stdio
       self.redirect_fds()   
- 
+
+
    def delpid(self):
+      os.seteuid(0)
       os.remove(self.pidfile)
+
+   def drop_privileges(self):
+       if os.getuid() != 0:
+           # We're not root so, osef
+           return
+
+       # Get the uid/gid from the name
+       user_name = os.getenv("SUDO_USER")
+       pwnam     = pwd.getpwnam(user_name)
+
+       # Remove group privileges
+       os.setgroups([])
+
+       # Try setting the new uid/gid
+       os.setgid(pwnam.pw_gid)
+       os.seteuid(pwnam.pw_uid)
+
+       # Ensure a reasonable umask
+       old_umask = os.umask(0o022)
  
    def start(self):
       """
@@ -88,7 +115,7 @@ class Daemon(object):
       """
       # Check pidfile to see if the daemon already runs.
       pid = self._open_pid()
-      if pid:
+      if pid: # catch nopid exception
          message = "pid file {} already exist, {} already running?\n".format(
                                                      self.pidfile, self.name)
          sys.stderr.write(message)
@@ -119,9 +146,8 @@ class Daemon(object):
          pid the pid number
       """
       try:
-         pf = open(self.pidfile,'r')
-         pid = int(pf.read().strip())
-         pf.close()
+         with open(self.pidfile,'r') as pf:
+            pid = int(pf.read().strip())
       except IOError as e:
          if exit_on_error:
             message = str(e) + "\n{} is not running\n".format(self.name)
@@ -139,8 +165,8 @@ class Daemon(object):
       pid = self._open_pid(exit_on_error=True)
 
       try:
-         procfile = open("/proc/{}/status".format(pid), 'r')
-         procfile.close()
+         with open("/proc/{}/status".format(pid), 'r') as procfile:
+            pass
          message = "{} running with pid {}\n".format(self.name, pid)
          sys.stdout.write(message)
          return 0
@@ -161,7 +187,7 @@ class Daemon(object):
          os.kill(pid, SIGTERM)
          time.sleep(1)
       except OSError as e:
-         sys.stdout.write(str(e))
+         sys.stdout.write(str(e)+"\n")
          return 1
  
       try:
@@ -197,4 +223,14 @@ class Daemon(object):
       """
       pass
 
+class DaemonException(Exception):
+   """
+   DaemonException(Exception)
+   """
+
+   def __init__(self, value):
+      self.value = value
+
+   def __str__(self):
+      return repr(self.value)
 

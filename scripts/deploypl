@@ -23,5 +23,5 @@ if cmd in cmd_switch:
    sys.exit(retval)
 else:
    sys.stdout.write("{} command not found\n".format(cmd))
-   sys.exit(2)
+   sys.exit(1)
 

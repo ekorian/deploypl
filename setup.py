@@ -12,11 +12,12 @@ except ImportError:
 config = {
    'description': 'PlanetLab deployer',
    'keywords' : 'planetlab deploy experiment',
-   'author': 'korian edeline',
+   'author': 'k.edeline',
    'url': 'https://github.com/ekorian/deploypl',
    'download_url': 'https://github.com/ekorian/deploypl',
    'author_email': 'korian.edeline@ulg.ac.be',
    'version': '0.1',
+   'platforms' : ['Unix','OS X'],
    
    #'install_requires': ['nose'],
 
@@ -25,11 +26,12 @@ config = {
    'scripts': ['scripts/deploypl'],
 
    'package_data': {
-      '': ['nodes/*.txt'],
+      'deploypl': ['deployer/deploypl.sqlite'],
    },
 
    'license' : 'PSF',
-   'name': 'deploypl'
+   'name': 'deploypl',
+   'zip_safe' : False,
 }
 
 setup(**config)

@@ -7,6 +7,7 @@ ios.py
 """
 
 import sys
+import os
 import argparse
 import configparser
 import logging
@@ -33,16 +34,16 @@ class IOManager(object):
       self.config = None
       self.logger = None
 
-   def load_ios(self):
-      """
-      load_ios
-      
-      Load all ios
-      """
+   def load_inputs(self):
       self.arguments()
-      self.configuration()
-      if 'start' in self.args.cmd:
-         self.log()
+      if "start" in self.args.cmd:
+         self.configuration()
+
+   def load_outputs(self, decoy=False):
+      self.log(decoy=decoy)
+
+      # put back root rights
+      os.seteuid(0)
 
    ########################################################
    # ARGPARSE
@@ -96,8 +97,8 @@ class IOManager(object):
          sys.exit(1)        
 
       # copy cfg file to /tmp/
-      if self.args.config != IOManager.DEFAULT_CONFIG_LOC:
-         shutil.copyfile(self.args.config, IOManager.DEFAULT_CONFIG_LOC)
+      #if self.args.config != IOManager.DEFAULT_CONFIG_LOC:
+      #   shutil.copyfile(self.args.config, IOManager.DEFAULT_CONFIG_LOC)
 
       return self.config
 
@@ -105,10 +106,19 @@ class IOManager(object):
    # LOGGING
    ########################################################
 
-   def log(self, console=False, logfile=True, errfile=False):
+   def log(self, decoy=False, console=False, logfile=True, errfile=False):
       """
       load logging facility
       """
+      if decoy:
+         decoy_logger  = lambda x : None
+         self.debug    = decoy_logger
+         self.info     = decoy_logger
+         self.warn     = decoy_logger
+         self.error    = decoy_logger
+         self.critical = decoy_logger
+         return
+
       if self.args == None:
          raise IOManagerException("Arguments not found")
       if self.config == None:
