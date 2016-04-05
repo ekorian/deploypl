@@ -8,6 +8,7 @@ planetlab02.erin.utoronto.ca	PLC	boot
 deimos.cecalc.ula.ve	PLC	boot		
 planetlabnode-2.docomolabs-usa.com	PLC	boot		
 planetlab1.iitr.ernet.in	PLC	boot		
+planetlab1.iitr.erssnet.in	PLC	boot
 planetlab2.cse.msu.edu	PLC	boot		
 planetlab2.cs.duke.edu	PLC	boot		
 planetlab0.ias.csusb.edu	PLC	boot		

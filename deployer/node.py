@@ -11,18 +11,21 @@ import enum
 import sys
 
 from collections import Counter
-
+from contextlib import contextmanager
 from pkg_resources import resource_filename
 
-import pssh
 from sqlalchemy import MetaData, Table, Column
 from sqlalchemy import Integer, String, Boolean, Enum
 from sqlalchemy import ForeignKey, create_engine
 from sqlalchemy.orm import mapper, relationship, sessionmaker
+from sqlalchemy.orm.session import make_transient
 from sqlalchemy.ext.declarative import declarative_base
 
+from deployer.ping import ping
+from deployer.resolver import AsyncResolver, is_valid_ipv4_address
+
+
 Base = declarative_base()
-SQLITE_INT_MAX = 9223372036854775807
 
 class PLNodeState(enum.Enum):
    """
@@ -44,37 +47,59 @@ class PLNodeState(enum.Enum):
    ## probably offline or changed name
    unreachable = 4
 
-   #def __str__(self):
-   #   return self.name
+   def __str__(self):
+      return self.name
 
-class PLNode(Base):
+class PLNode(Base): #PLNodeBase
    """
    PLNode
    
    """
+
+   # SQLAlchemy attributes
    __tablename__  = "node"
    id        = Column(Integer, primary_key=True)
    name      = Column(String(255))
+   addr      = Column(String(64)) # XXX
    authority = Column(String(4))
    state     = Column(Integer)
    kernel    = Column(String(255))
    os        = Column(String(255))
    vsys      = Column(Boolean)
+   #last_seen = Column(Time)
+
+   @staticmethod
+   def keys():
+      """
+      Returns a list of key attributes (keys)
+      """
+      keys = PLNode.__table__.columns.keys()
+      keys.remove('id')
+      keys.remove('addr')
+      keys.remove('name') # XXX
+      return keys
    
    def __init__(self, name, authority, state=None):
       self.name      = name
       self.id        = self._id()
       self.authority = authority
+
       if state is None:
          self._state  = PLNodeState.unreachable
       else:
          self._state  = PLNodeState(state)
 
-      self.kernel = "2.6"
-      self.os     = "Ubuntu Saucy"
-      self.vsys   = False
+      self.kernel    = "Unknown"
+      self.os        = "Unknown"
+      self.vsys      = False
+      self.last_seen = None 
+      self.addr      = None
+   
       self._update_state()
            
+   def _update_time(self):
+      self.last_seen = time.time()
+
    def _update_state(self):
       self.state = self._state.value
       return self
@@ -83,10 +108,18 @@ class PLNode(Base):
       self._state = PLNodeState(self.state)
       return self
 
+   def to_dict(self):
+      return { "name"      : self.name,
+               "authority" : self.authority,
+               "state"     : self.state,
+               "kernel"    : self.kernel,
+               "os"        : self.os,
+               "vsys"      : self.vsys,
+             }
+
    def _id(self):
       return int(hashlib.sha1(bytes(self.name, "ascii")).hexdigest(), 
-                                                     16) % SQLITE_INT_MAX
-
+                                                     16) % (2**63 - 1)
    def __str__(self):
       return "{} node {} is in state {}".format(self.authority, 
                                                 self.name, 
@@ -98,133 +131,182 @@ class PLNode(Base):
    def __ne__(self, other):
         return not self.__eq__(other) 
 
+   def ping(self):
+      # ping -q -w 5 -c 1
+      result = ping(self.addr, deadline=5, count=1)
+      answer = 'received'
+      if answer in result and result[answer] > 0:
+
+         # Got an answer, update node state
+         self._update_time()
+         if self.state == PLNodeState.unreachable:
+            self.state = PLNodeState.reachable
+      else:
+
+         # No answer
+         self.state = PLNodeState.unreachable  
+
+@contextmanager
+def session_scope(daemon, db_loc):
+   """
+   Provide a transactional scope around database operations.
+   """
+   daemon.root()
+
+   engine = create_engine('sqlite:////'+db_loc)
+   Base.metadata.create_all(engine)
+   session = sessionmaker(engine)()
+   session.expire_on_commit = False
+
+   try:
+      yield session
+      session.commit()
+   except:
+      session.rollback()
+      raise PLNodePoolException("Database error")
+   finally:
+      session.close()
+      engine.dispose()
+
+      daemon.drop_privileges()
+
 class PLNodePool(object):
    """
    PLNodePool
+
    """
 
-   def __init__(self, pld, raw_file, initial_delay=0, interval=3600):
+   def __init__(self, daemon, rawfile=None):
       """
-      
       @param raw_file contains copypaste of nodes listed in slice from PL website
       """
-      self.pld = pld
-      self.initial_delay = 0
-      self.interval = interval
+      self.daemon = daemon
       self.pool = []
 
-      # Init sqlite database
-      db_loc = resource_filename(__name__, 'deploypl.sqlite')
-      self.engine = create_engine('sqlite:////'+db_loc)#, echo=True)
-      Base.metadata.create_all(self.engine)
-      self.session = sessionmaker(self.engine)()
+      self.db_loc = resource_filename(__name__, 'deploypl.sqlite')#XXX init without db
+      
+      self._merge(rawfile)
 
-      # Load & merge node pools
-      db_pool   = self._load_db()
-      file_pool = self._load_raw(raw_file)
-      self.pool = self._merge_pools(db_pool, file_pool)
-
-      # If database is empty, save nodes
-      if not db_pool and file_pool: 
-         self._add_all()
-         
-      # Ping service
-      self.timer = threading.Timer(self.initial_delay, self.poll)
-      # XXX one schedule.enter per state
-
-   def _merge_pools(self, db_pool, file_pool):
+   def _merge(self, rawfile):
       """
-      Merge node pools
+      Load nodes from database, parse nodes from raw-nodes file,
+      Add new nodes found from file to database nodes, update self.pool,
+      and add new nodes to the database.
       """
-      if not db_pool and not file_pool:
+      filepool = self._load_raw(rawfile)
+      with session_scope(self.daemon, self.db_loc) as session:
+
+         # Load & merge node pools
+         dbpool   = self._load_db(session)
+         newnodes = self._merge_pools(dbpool, filepool)
+
+         # Save new nodes to db
+         session.add_all(newnodes)
+
+   def _lookup(self, pool):
+      """
+      Resolve names of node from pool
+
+      """
+      if not pool:
+         return []
+
+      # Queries
+      self.daemon.debug("Performing {} DNS lookups".format(len(pool)))
+      names = [node.name for node in pool]
+      resolver = AsyncResolver(names)
+      res = resolver.resolveA()
+
+      # Filter out invalid addresses
+      for node in pool:
+         addr = res[node.name]
+         if addr and is_valid_ipv4_address(addr):
+            node.addr = addr
+
+      validpool = list(filter(lambda n: n.addr != None, pool))
+      self.daemon.debug("Received {} valid DNS responses".format(len(validpool)))
+
+      return validpool
+
+   def update(self):
+      """
+      update node table with nodes from pool
+
+      @pre: all node from self.node are already present in the database
+      """
+      # Update database
+      with session_scope(self.daemon, self.db_loc) as session:
+         #dbpool   = self._load_db(session)
+         for node in self.pool:
+            node._update_state()
+            session.query(PLNode).filter_by(id=node.id).update(node.to_dict())
+
+
+   def _merge_pools(self, dbpool, filepool):
+      """
+      Merge node pools, returns nodes that were not present in db
+      """
+      if not dbpool and not filepool:
          raise PLNodePoolException("Empty node pool")
-      if not db_pool:
-         self.pld.debug("read {} node entries from file".format(len(file_pool)))
-         return file_pool
-      if not file_pool:
-         self.pld.debug("read {} node entries from db".format(len(db_pool)))
-         return db_pool
 
       # Add new file nodes to db nodes
-      new_nodes = []
-      for file_n in file_pool:
-         if file_n not in db_pool:
-            new_nodes.append(file_n)
+      newnodes = []
+      for filenode in filepool:
+         if filenode not in dbpool:
+            newnodes.append(filenode)
 
-      self.pld.debug("read {} node entries from db and {} from file".format(
-                                                            len(db_pool), 
-                                                            len(new_nodes)))      
-      return db_pool + new_nodes
+      self.daemon.debug("read {} node entries from db and {} from file".format(
+                                                            len(dbpool), 
+                                                            len(newnodes)))  
+      # Lookup newnodes addresses
+      newnodes = self._lookup(newnodes)    
+      
+      # Add newnodes to pool
+      self.pool = dbpool + newnodes
+      return newnodes
 
-   def _load_raw(self, raw_file):
+   def _load_raw(self, rawfile):
       """
-      Load nodes from raw file
+      Load nodes from rawfile
       """
       pool = []
-      if not raw_file:
+      if not rawfile:
          return pool
 
       # Load nodes from file
-      with open(raw_file, 'r') as f:
-         raw_nodes = map(str.split, f.readlines())
-         for name, auth, state in raw_nodes:
+      with open(rawfile, 'r') as f:
+         # Keep 3-tuples
+         rawnodes = map(str.split, f.readlines())
+         rawnodes = [x for x in rawnodes if x]
 
-            # keep only node with boot state
+         for name, auth, state in rawnodes:
+            # Keep nodes with boot state
             if state == "boot":
                node = PLNode(name, auth)
                pool.append(node)
+
       return pool
 
-   def _add_all(self):
-      self.session.add_all(self.pool)
-      self.session.commit()
-
-   def _load_db(self):
+   def _load_db(self, session):
       """
       Load nodes from database
       """
-      query = self.session.query(PLNode).all()
+      query = session.query(PLNode).all()
       return [n._update_state_reverse() for n in query]
 
-   def run(self):
-      self.timer.start()
-
-   def poll(self):
-      """
-      Poll nodepool
-      """      
-      ## ping
-
-      ## ssh
-   
-      ## reseted, ro node ?
-
-
-      ## if reseted or first time
-      self.profile()
-
-      # schedule next poll
-      self.timer = threading.Timer(self.interval, self.poll)
-      self.timer.start()
-
-   def profile(self):
-      """
-      get kernel, distrib, ip, vsys, 
-      check for broken packet manager (& fix)
-      """
-      pass
-
-   def states(self):
+   def status(self):
       """
       @return node state count as a list
       """
-      return Counter([n._state for n in self.pool]).most_common()
+      attributes  = PLNode.keys()
+      counterdict = {}
+      pooldicts   = [n.to_dict() for n in self.pool]
 
-   def authorities(self):
-      """
-      @return node auth count as a list
-      """
-      return Counter([n.authority for n in self.pool]).most_common()
+      # count attributes
+      for a in attributes:
+         counterdict[a] = Counter([node[a] for node in pooldicts]).most_common()
+
+      return counterdict
 
    def __str__(self):
       return "\n".join([str(node) for node in self.pool])

@@ -42,9 +42,6 @@ class IOManager(object):
    def load_outputs(self, decoy=False):
       self.log(decoy=decoy)
 
-      # put back root rights
-      os.seteuid(0)
-
    ########################################################
    # ARGPARSE
    ########################################################
@@ -57,9 +54,6 @@ class IOManager(object):
       """
 
       parser = argparse.ArgumentParser(description='PlanetLab deployer')
-      #parser.add_argument('username', nargs=1, help='PlanetLab username', type=str)
-      #parser.add_argument('login', nargs=1, help='PlanetLab website username', type=str)
-      #parser.add_argument('password', nargs=1, help='PlanetLab website password', type=str)
       parser.add_argument('cmd', help='start|stop|restart|status', type=str,
                            choices=["start", "stop", "restart", "status"])
 
@@ -72,7 +66,9 @@ class IOManager(object):
                          default=IOManager.DEFAULT_CONFIG_LOC,
                          help='configuration file location')
       parser.add_argument('-d' , '--debug', action='store_true',
-                         help='increase output level') 
+                         help='increase log output level') 
+      parser.add_argument('-v' , '--verbose', action='store_true',
+                         help='increase stdout output level') 
 
       self.args = parser.parse_args()
 
@@ -109,14 +105,15 @@ class IOManager(object):
    def log(self, decoy=False, console=False, logfile=True, errfile=False):
       """
       load logging facility
+
       """
       if decoy:
-         decoy_logger  = lambda x : None
-         self.debug    = decoy_logger
-         self.info     = decoy_logger
-         self.warn     = decoy_logger
-         self.error    = decoy_logger
-         self.critical = decoy_logger
+         decoy_logger  = lambda _ : None
+         self.debug    = self.info     \
+                       = self.warn     \
+                       = self.error    \
+                       = self.critical \
+                       = decoy_logger
          return
 
       if self.args == None:
@@ -138,12 +135,14 @@ class IOManager(object):
       #                                 when='midnight',interval=1,backupCount=10)
       # log file handler
       if logfile:
-         fh = logging.FileHandler(self.config["core"]["logging_dir"]+"/"+self.args.log_file)
+         fh = logging.FileHandler(self.config["core"]["logging_dir"]+
+                                               "/"+self.args.log_file)
          fh.setLevel(logging.DEBUG if self.args.debug else logging.INFO)
 
       # error file handler
       if errfile:
-         eh = logging.FileHandler(self.config["core"]["logging_dir"]+"/"+self.args.error_file)
+         eh = logging.FileHandler(self.config["core"]["logging_dir"]+
+                                             "/"+self.args.error_file)
          eh.setLevel(logging.ERROR)
 
       # add formatter to handlers & handlers to logger
@@ -178,7 +177,4 @@ class IOManagerException(Exception):
 
    def __str__(self):
       return repr(self.value)
-
-
-
       

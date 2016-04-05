@@ -12,9 +12,10 @@ import pwd
 import grp
 import time
 import atexit
-from signal import SIGTERM
 import logging
 import logging.handlers
+
+from signal import SIGTERM
 
 class Launcher(object):
    """
@@ -33,13 +34,14 @@ class Daemon(object):
                      stderr='/var/log/deploypl.log',
                      name='daemon', **kwargs): # TODO: replace with /dev/null
       super().__init__(**kwargs)
-      self.stdin   = stdin
-      self.stdout  = stdout
-      self.stderr  = stderr
-      self.pidfile = pidfile
-      self.name    = name
+      self.stdin    = stdin
+      self.stdout   = stdout
+      self.stderr   = stderr
+      self.pidfile  = pidfile
+      self.name     = name
 
-      self.cwd     = os.getcwd()
+      self.cwd      = os.getcwd()
+      self._dropped = False
 
    def _fork(self):
       """
@@ -81,13 +83,14 @@ class Daemon(object):
 
       # drop privileges with seteuid to get it back atexit
       self.drop_privileges()
+      self._dropped = True
 
       # Redirects stdio
       self.redirect_fds()   
 
 
    def delpid(self):
-      os.seteuid(0)
+      self.root()
       os.remove(self.pidfile)
 
    def drop_privileges(self):
@@ -108,6 +111,13 @@ class Daemon(object):
 
        # Ensure a reasonable umask
        old_umask = os.umask(0o022)
+
+   def root(self):
+      """
+      Grant root rights, if possible.
+      """
+      if self._dropped:
+         os.seteuid(0)
  
    def start(self):
       """
@@ -141,7 +151,7 @@ class Daemon(object):
 
    def _open_pid(self, exit_on_error=False):
       """
-      open the pid file and return the pid
+      open the pid file and return the pid number
       @return:
          pid the pid number
       """
@@ -167,8 +177,6 @@ class Daemon(object):
       try:
          with open("/proc/{}/status".format(pid), 'r') as procfile:
             pass
-         message = "{} running with pid {}\n".format(self.name, pid)
-         sys.stdout.write(message)
          return 0
       except IOError:
          message = "no process with pid {}\n".format(self.pidfile)

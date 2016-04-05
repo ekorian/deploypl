@@ -10,6 +10,7 @@
    - ????
    - PROFIT
 
-# Libraries
-   - rpyc (pip install rpyc)
-   
+# Dependencies
+   - sqlalchemy
+   - parallel-ssh (pip install parallel-ssh)
+   - python3-adns (https://github.com/trolldbois/python3-adns)

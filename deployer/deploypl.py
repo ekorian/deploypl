@@ -12,16 +12,19 @@ import time
 import http
 from http import client
 
+import deployer.node
 from deployer.ios import IOManager
 from deployer.daemon import Daemon
-from deployer.node import PLNodePool
+from deployer.poller import Poller
+
+# XXX exceptino file ?
 
 class PLDeployer(IOManager, Daemon):
    """
    PLDeployer
-
    
    """
+
    def __init__(self):
       super(PLDeployer, self).__init__(child=self, 
                               pidfile='/var/run/deploypl.pid',
@@ -30,7 +33,7 @@ class PLDeployer(IOManager, Daemon):
                               name='deploypl')
       self.load_inputs()
       
-      self.pool = None
+      self.pool = None # XXX fix name
       
    def _load_config(self):
       """
@@ -39,8 +42,8 @@ class PLDeployer(IOManager, Daemon):
       self.plconfig = self.config["planet-lab.eu"]
       
       # PL settings
-      self._node_dir = "/".join([self.cwd, self.config["core"]["nodes_dir"]])
-      self._raw_file = "/".join([self._node_dir, self.config["core"]["raw_nodes"]])
+      self._nodedir = "/".join([self.cwd, self.config["core"]["nodes_dir"]])
+      self._rawfile = "/".join([self._nodedir, self.config["core"]["raw_nodes"]])
 
    def load(self):
       """
@@ -49,8 +52,7 @@ class PLDeployer(IOManager, Daemon):
       self._load_config()
       self.load_outputs()
 
-      self.pool = PLNodePool(self, self._raw_file)
-      
+      self.pool = Poller(self, self._rawfile)
 
    def run(self):
       """      
@@ -61,24 +63,32 @@ class PLDeployer(IOManager, Daemon):
       """
       # Load env
       self.load()
-      self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
-      self.info(self.pool.authorities())
-
-      
-      self.error("finshed")
-      
-      #self.debug("Found {} PLC and {} PLE nodes from raw nodes file".format())
+      self.debug(self.pool.status())
+      self.debug("loading completed, starting to probe ...")
+     
+      self.pool.run()
       while True:
          self.error("loop")
          time.sleep(5)
+
+      self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
       """"""
 
-   def status_str(self):
+   def status_str(self, spaced=False):
       """
       Returns a string that describes current node pool state
       """
-      status_str = str(self.pool.states())+"\n"
-      status_str += str(self.pool.authorities())+"\n"
+      status = self.pool.status()
+      status_str = ""
+
+      # Simply unroll dicts and print their content
+      for key, count in status.items():
+         status_str += key+":\n"
+         for k, v in count:
+            status_str += "  "+str(k)+": "+str(v)+"\n"
+         if spaced:
+            status_str += "\n"
+
       return status_str
 
    def status(self):
@@ -88,12 +98,16 @@ class PLDeployer(IOManager, Daemon):
       if Daemon.status(self) != 0:
          return 1
       
-      # Load decoy logger functions
+      # Load decoy logger
       self.load_outputs(decoy=True)
 
       # Load node pool & print status
-      self.pool = PLNodePool(self, None)      
-      sys.stdout.write(self.status_str())
+      try:
+         self.pool = Poller(self, None)      
+         sys.stdout.write(self.status_str())
+      except deployer.node.PLNodePoolException:
+         sys.stdout.write("empty\n")
+
       return 0
 
 
