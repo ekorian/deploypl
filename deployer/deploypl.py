@@ -1,7 +1,7 @@
 """
 deloypl.py
 
-   This file contains the PL deployer core.
+   PL Deployer
 
 @author: K.Edeline
 """
@@ -17,8 +17,6 @@ from deployer.node import PLNodeState
 from deployer.ios import IOManager
 from deployer.daemon import Daemon
 from deployer.poller import Poller
-
-# XXX exceptino file ?
 
 class PLDeployer(IOManager, Daemon):
    """
@@ -60,11 +58,10 @@ class PLDeployer(IOManager, Daemon):
       self.debug("loading completed, starting to probe ...")
 
       # main loop
+      time.sleep(self.initialdelay)
       while True:
          self.pool.poll()
-         self.error("loop")
-
-         time.sleep(1800)
+         time.sleep(self.period)
 
       self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
       """"""

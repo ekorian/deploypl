@@ -1,7 +1,7 @@
 """
 poller.py
 
-   PL nodes
+   Poll nodes with ping, ssh and more
 
 @author: K.Edeline
 """
