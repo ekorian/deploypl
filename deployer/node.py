@@ -9,6 +9,7 @@ import threading
 import hashlib
 import enum
 import sys
+import time
 
 from collections import Counter
 from contextlib import contextmanager
@@ -17,11 +18,9 @@ from pkg_resources import resource_filename
 from sqlalchemy import MetaData, Table, Column
 from sqlalchemy import Integer, String, Boolean, Enum
 from sqlalchemy import ForeignKey, create_engine
-from sqlalchemy.orm import mapper, relationship, sessionmaker
-from sqlalchemy.orm.session import make_transient
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
-from deployer.ping import ping
 from deployer.resolver import AsyncResolver, is_valid_ipv4_address
 
 
@@ -33,22 +32,31 @@ class PLNodeState(enum.Enum):
 
    """
    ## usable, the node is accessible 
-   usable      = 1
+   usable      = 4
 
    ## accessible, ssh session was established to the node but one
    ## mighty PlanetLab bug prevents using it properly
-   accessible  = 2
+   accessible  = 3
 
    ## reachable, the node is answering to ping requests
    ## but no ssh session can be established
-   reachable   = 3
+   reachable   = 2
 
    ## unreachable, node is not answering ping requests, 
    ## probably offline or changed name
-   unreachable = 4
+   unreachable = 1
 
    def __str__(self):
       return self.name
+   def __lt__(self, other):
+      return self.value <  other.value
+   def __le__(self, other):
+      return self.value <= other.value
+   def __gt__(self, other):
+      return self.value >  other.value
+   def __ge__(self, other):
+      return self.value >= other.value
+      
 
 class PLNode(Base): #PLNodeBase
    """
@@ -108,14 +116,44 @@ class PLNode(Base): #PLNodeBase
       self._state = PLNodeState(self.state)
       return self
 
-   def to_dict(self):
+   def to_dict(self, enum=False):
       return { "name"      : self.name,
+               "addr"      : self.addr,
                "authority" : self.authority,
-               "state"     : self.state,
+               "state"     : self._state if enum else self.state,
                "kernel"    : self.kernel,
                "os"        : self.os,
                "vsys"      : self.vsys,
              }
+
+   def update(self, to_update):
+      """
+      Update node state from value of to_update 
+      @param to_update {'name': value}
+      """
+      for k, d in to_update.items():
+         if   k == "name":
+            self.name      = d
+         elif k == "addr":
+            self.addr      = d
+         elif k == "authority":
+            self.authority = d
+         elif k == "state":
+            self._update__state(d)
+         elif k == "kernel":
+            self.kernel    = d
+         elif k == "os":
+            self.os        = d
+         elif k == "vsys":
+            self.vsys      = d
+         
+   def _update__state(self, state):
+      """
+      update node state and lastseen
+      """
+      if state > PLNodeState.unreachable:
+         self._update_time()
+      self._state = state
 
    def _id(self):
       return int(hashlib.sha1(bytes(self.name, "ascii")).hexdigest(), 
@@ -129,22 +167,7 @@ class PLNode(Base): #PLNodeBase
             and self.id == other.id)
 
    def __ne__(self, other):
-        return not self.__eq__(other) 
-
-   def ping(self):
-      # ping -q -w 5 -c 1
-      result = ping(self.addr, deadline=5, count=1)
-      answer = 'received'
-      if answer in result and result[answer] > 0:
-
-         # Got an answer, update node state
-         self._update_time()
-         if self.state == PLNodeState.unreachable:
-            self.state = PLNodeState.reachable
-      else:
-
-         # No answer
-         self.state = PLNodeState.unreachable  
+        return not self.__eq__(other)  
 
 @contextmanager
 def session_scope(daemon, db_loc):
@@ -241,6 +264,7 @@ class PLNodePool(object):
             node._update_state()
             session.query(PLNode).filter_by(id=node.id).update(node.to_dict())
 
+      self.daemon.debug("database updated")
 
    def _merge_pools(self, dbpool, filepool):
       """
@@ -294,23 +318,107 @@ class PLNodePool(object):
       query = session.query(PLNode).all()
       return [n._update_state_reverse() for n in query]
 
-   def status(self):
+   def status(self, min_state=None, string=False):
       """
       @return node state count as a list
-      """
+
+      """    
+      if min_state != None:
+         pool = self._filter_ge(min_state) 
+      else:
+         pool = self.pool
+
       attributes  = PLNode.keys()
       counterdict = {}
-      pooldicts   = [n.to_dict() for n in self.pool]
+      pooldicts   = [n.to_dict(enum=True) for n in pool]
 
       # count attributes
       for a in attributes:
          counterdict[a] = Counter([node[a] for node in pooldicts]).most_common()
 
+      if string:
+         return self._status_tostr(counterdict)
+
       return counterdict
+
+   def _status_tostr(self, status, spaced=False):
+      """
+      convert status to string
+      """
+      status_str = ""
+      for key, count in status.items():
+         status_str += key+":\n"
+         for k, v in count:
+            status_str += "  "+str(k)+": "+str(v)+"\n"
+         if spaced:
+            status_str += "\n"
+
+      return status_str
 
    def __str__(self):
       return "\n".join([str(node) for node in self.pool])
 
+   def _filter_eq(self, state):
+      return list(filter(lambda n: n._state == state, self.pool))
+
+   def _filter_ge(self, state):
+      return list(filter(lambda n: n._state >= state, self.pool)) 
+
+   def _set(self, attribute, attributelist):
+      """
+      Set 'attribute' with value from 'attributelist'.
+      'attributelist' must be ordered like self.pool
+      """
+      assert len(self.pool) == len(attributelist)
+      for i, value in enumerate(attributelist):
+         self.pool[i].update({attribute: value})
+
+   def _set_node(self, addr, attribute, value):
+      """
+      Set 'attribute' value of node with addr 'addr' to 'value'.
+      
+      """
+      for node in self.pool:
+         if node.addr == addr:
+            node.update({attribute: value})
+            break
+
+   def _update_pool(self, dictlist, min_state=None, state=None):
+      """
+      map(node.update(), dictlist)
+      'dictlist' must be ordered like self.pool
+      """
+      pool = self.pool
+      if min_state != None:
+         pool = self._filter_ge(min_state)
+      elif state != None:
+         pool = self._filter_eq(state)
+
+      assert len(dictlist) == len(pool)
+      for i, d in enumerate(dictlist):
+         pool[i].update(d)
+
+   def _get(self, attribute, min_state=None, state=None):
+      """
+      @return a list of nodes 'attribute'
+      """
+      pool = self.pool
+      if min_state != None:
+         pool = self._filter_ge(min_state)
+      elif state != None:
+         pool = self._filter_eq(state)
+
+      _switch = { 
+         "name"      : lambda: [node.name      for node in pool],
+         "addr"      : lambda: [node.addr      for node in pool],
+         "authority" : lambda: [node.authority for node in pool],
+         "state"     : lambda: [node._state    for node in pool],
+         "kernel"    : lambda: [node.kernel    for node in pool],
+         "os"        : lambda: [node.os        for node in pool],
+         "vsys"      : lambda: [node.vsys      for node in pool],
+             
+      }
+      return _switch[attribute]()
 
 class PLNodePoolException(Exception):
    """

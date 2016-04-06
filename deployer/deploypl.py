@@ -13,6 +13,7 @@ import http
 from http import client
 
 import deployer.node
+from deployer.node import PLNodeState
 from deployer.ios import IOManager
 from deployer.daemon import Daemon
 from deployer.poller import Poller
@@ -34,25 +35,17 @@ class PLDeployer(IOManager, Daemon):
       self.load_inputs()
       
       self.pool = None # XXX fix name
-      
-   def _load_config(self):
-      """
-      Load configuration
-      """
-      self.plconfig = self.config["planet-lab.eu"]
-      
-      # PL settings
-      self._nodedir = "/".join([self.cwd, self.config["core"]["nodes_dir"]])
-      self._rawfile = "/".join([self._nodedir, self.config["core"]["raw_nodes"]])
 
    def load(self):
       """
       load at run time (not instantiation time)
       """
-      self._load_config()
       self.load_outputs()
-
-      self.pool = Poller(self, self._rawfile)
+      
+      self.pool = Poller(self, rawfile=self._rawfile, user=self.user, 
+                               period=self.period, threadlimit=self.threadlimit,
+                               sshlimit=self.sshlimit, plslice=self.slice,
+                               initialdelay=self.initialdelay)
 
    def run(self):
       """      
@@ -65,11 +58,13 @@ class PLDeployer(IOManager, Daemon):
       self.load()
       self.debug(self.pool.status())
       self.debug("loading completed, starting to probe ...")
-     
-      self.pool.run()
+
+      # main loop
       while True:
+         self.pool.poll()
          self.error("loop")
-         time.sleep(5)
+
+         time.sleep(1800)
 
       self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
       """"""
@@ -78,18 +73,15 @@ class PLDeployer(IOManager, Daemon):
       """
       Returns a string that describes current node pool state
       """
-      status = self.pool.status()
-      status_str = ""
+      if self.args.vverbose:
+         status = self.pool.status(string=True)
+      elif self.args.verbose:
+         status = self.pool.status(min_state=PLNodeState.usable, string=True)
+      else:
+         status = "\n".join(self.pool._get("addr", min_state=PLNodeState.usable))
+         status += "\n"
 
-      # Simply unroll dicts and print their content
-      for key, count in status.items():
-         status_str += key+":\n"
-         for k, v in count:
-            status_str += "  "+str(k)+": "+str(v)+"\n"
-         if spaced:
-            status_str += "\n"
-
-      return status_str
+      return status
 
    def status(self):
       """
@@ -103,7 +95,7 @@ class PLDeployer(IOManager, Daemon):
 
       # Load node pool & print status
       try:
-         self.pool = Poller(self, None)      
+         self.pool = Poller(self)      
          sys.stdout.write(self.status_str())
       except deployer.node.PLNodePoolException:
          sys.stdout.write("empty\n")

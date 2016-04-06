@@ -4,25 +4,22 @@ ping.py
    pinger module
 
 @author: K.Edeline
-"""
 
+"""
 import re
-import sys
 import subprocess
-from subprocess import check_output
 
 _pingopt_count = "-c"
 _pingopt_deadline = "-w"
 _pingopt_quiet = "-q"
 
-def ping(dipaddr, progname='ping', deadline=5, quiet=True, period=None, count=1):
-   output = _ping_process(dipaddr, progname=progname, deadline=deadline, 
-                                   quiet=quiet, period=period, count=count)
-   return _ping_parse(str(output))
+regex1 = re.compile(r'PING ([a-zA-Z0-9.\-]+) \(')
+regex2 = re.compile(r'(\d+) packets transmitted, (\d+) received')
+regex3 = re.compile(r'(\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)')
 
-def _ping_process(dipaddr, progname='ping', deadline=5, quiet=True, period=None, count=1):
+def ping_process(dipaddr, progname='ping', deadline=5, quiet=True, period=None, count=1):
    """
-   subprocess ping
+   return a ping subprocess.Popen
 
    """
    ping_argv = [progname]
@@ -36,16 +33,21 @@ def _ping_process(dipaddr, progname='ping', deadline=5, quiet=True, period=None,
       ping_argv += [_pingopt_deadline, str(deadline)]
    ping_argv += [str(dipaddr)]
 
-   return check_output(ping_argv)
+   # Run subprocess
+   try:
+      p=subprocess.Popen(ping_argv, stdout=subprocess.PIPE)
+   except subprocess.CalledProcessError: 
+      pass   
 
-def _ping_parse(ping_output): # ping $ADDR -q -w 3 -c 1
+   return p
+
+def ping_parse(ping_output):
    """
    Parses the `ping_output` string into a dictionary containing the following
    fields:
      `host`: *string*; the target hostname that was pinged
      `sent`: *int*; the number of ping request packets sent
      `received`: *int*; the number of ping reply packets received
-     `packet_loss`: *int*; the percentage of  packet loss
      `minping`: *float*; the minimum (fastest) round trip ping request/reply
                  time in milliseconds
      `avgping`: *float*; the average round trip ping time in milliseconds
@@ -54,21 +56,17 @@ def _ping_parse(ping_output): # ping $ADDR -q -w 3 -c 1
      `jitter`: *float*; the standard deviation between round trip ping times
                  in milliseconds
    """
-
-   matcher = re.compile(r'PING ([a-zA-Z0-9.\-]+) \(')
-   host = _get_match_groups(ping_output, matcher)[0]
-
-   matcher = re.compile(r'(\d+) packets transmitted, (\d+) received, (\d+)% packet loss')
-   sent, received, packet_loss = _get_match_groups(ping_output, matcher)
+   
+   host = _get_match_groups(ping_output, regex1)[0]
+   sent, received = _get_match_groups(ping_output, regex2)
 
    try:
-      matcher = re.compile(r'(\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)')
       minping, avgping, maxping, jitter = _get_match_groups(ping_output,
-                                                           matcher)
+                                                           regex3)
    except:
       minping, avgping, maxping, jitter = ['NaN']*4
 
-   return {'host': host, 'sent': sent, 'received': received, 'packet_loss': packet_loss,
+   return {'host': host, 'sent': int(sent), 'received': int(received), 
          'minping': minping, 'avgping': avgping, 'maxping': maxping,
          'jitter': jitter}
 

@@ -16,7 +16,7 @@ config = {
    'url': 'https://github.com/ekorian/deploypl',
    'download_url': 'https://github.com/ekorian/deploypl',
    'author_email': 'korian.edeline@ulg.ac.be',
-   'version': '0.1',
+   'version': '0.2',
    'platforms' : ['Unix','OS X'],
    
    #'install_requires': ['nose'],

@@ -59,16 +59,15 @@ class IOManager(object):
 
       parser.add_argument('-l' , '--log-file', type=str, default="deploypl.log",
                          help='log file location (default: deploypl.log)')
-      parser.add_argument('-e' , '--error-file', type=str, default="errors.log",
-                         help='error file location (default: error.log)')
-
       parser.add_argument('-c' , '--config', type=str,
-                         default=IOManager.DEFAULT_CONFIG_LOC,
+                         #default=IOManager.DEFAULT_CONFIG_LOC,
                          help='configuration file location')
       parser.add_argument('-d' , '--debug', action='store_true',
                          help='increase log output level') 
       parser.add_argument('-v' , '--verbose', action='store_true',
-                         help='increase stdout output level') 
+                         help='status print node descriptions') 
+      parser.add_argument('-vv' , '--vverbose', action='store_true',
+                         help='print info about non-usable nodes') 
 
       self.args = parser.parse_args()
 
@@ -95,8 +94,43 @@ class IOManager(object):
       # copy cfg file to /tmp/
       #if self.args.config != IOManager.DEFAULT_CONFIG_LOC:
       #   shutil.copyfile(self.args.config, IOManager.DEFAULT_CONFIG_LOC)
+      # Load config
+      self._load_config()
 
       return self.config
+
+   def _load_config(self):
+      """
+      Load configuration
+      """
+      
+      # PL settings
+      self._nodedir = self._to_absolute(self.config["core"]["nodes_dir"])
+      self._datadir = self._to_absolute(self.config["core"]["data_dir"])
+      self._logdir  = self._to_absolute(self.config["core"]["log_dir"])
+      self._rawfile = self._to_absolute(self.config["core"]["raw_nodes"], 
+                                          root=self._nodedir)
+      
+      self.threadlimit = int(self.config["core"]["thread_limit"])
+      self.sshlimit    = int(self.config["core"]["ssh_limit"])
+      self.period      = int(self.config["core"]["probing_period"])
+      self.initialdelay = (self.config["core"]["initial_delay"] == 'yes')
+
+      self.slice = self.config["core"]["slice"]
+      self.user  = self.config["core"]["user"]
+
+   def _to_absolute(self, path, root=None):
+      """
+      Convert path to absolute if it's not already
+      """
+      if not path:
+         return None
+      if path.startswith("/"):
+         return path
+      if not root:
+         root = self.cwd
+
+      return "/".join([root, path])
 
    ########################################################
    # LOGGING
@@ -135,14 +169,14 @@ class IOManager(object):
       #                                 when='midnight',interval=1,backupCount=10)
       # log file handler
       if logfile:
-         fh = logging.FileHandler(self.config["core"]["logging_dir"]+
-                                               "/"+self.args.log_file)
+         fh = logging.FileHandler(self._to_absolute(self.args.log_file, 
+                                                   root=self._logdir))
          fh.setLevel(logging.DEBUG if self.args.debug else logging.INFO)
 
       # error file handler
       if errfile:
-         eh = logging.FileHandler(self.config["core"]["logging_dir"]+
-                                             "/"+self.args.error_file)
+         eh = logging.FileHandler(self._to_absolute(self.args.error_file, 
+                                                   root=self._logdir))
          eh.setLevel(logging.ERROR)
 
       # add formatter to handlers & handlers to logger
@@ -171,7 +205,6 @@ class IOManagerException(Exception):
    """
    IOManagerException(Exception)
    """
-
    def __init__(self, value):
       self.value = value
 
