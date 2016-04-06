@@ -7,8 +7,7 @@
    - Modify deploypl.ini with your own informations
    - Go to the planetlab website you registred to and copypaste the nodes listed in boot state to nodes/raw-nodes.txt
    - Start the daemon
-   - ????
-   - PROFIT
+   - $ deploy status [-v] [-vv]
 
 # Dependencies
    - sqlalchemy
