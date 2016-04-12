@@ -1,4 +1,10 @@
+"""
+resolver.py
 
+   Asynchronous dns resolver (adns wrapper)
+
+@author: K.Edeline
+"""
 import socket
 import adns
 

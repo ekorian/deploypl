@@ -99,8 +99,8 @@ class Daemon(object):
            return
 
        # Get the uid/gid from the name
-       user_name = os.getenv("SUDO_USER")
-       pwnam     = pwd.getpwnam(user_name)
+       self.username = os.getenv("SUDO_USER")
+       pwnam         = pwd.getpwnam(self.username)
 
        # Remove group privileges
        os.setgroups([])

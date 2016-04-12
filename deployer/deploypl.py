@@ -37,14 +37,14 @@ class PLDeployer(IOManager, Daemon):
    def load(self):
       """
       load at run time (not instantiation time)
+      
       """
       self.load_outputs()
-      
+      ## warning, ns lookups here
       self.pool = Poller(self, rawfile=self._rawfile, user=self.user, 
                                period=self.period, threadlimit=self.threadlimit,
                                sshlimit=self.sshlimit, plslice=self.slice,
                                initialdelay=self.initialdelay)
-
    def run(self):
       """      
       while True:
@@ -71,12 +71,16 @@ class PLDeployer(IOManager, Daemon):
       Returns a string that describes current node pool state
       """
       if self.args.vverbose:
+         #status = "\n".join(self.pool._get("addr"))+"\n"#
          status = self.pool.status(string=True)
       elif self.args.verbose:
          status = self.pool.status(min_state=PLNodeState.usable, string=True)
       else:
-         status = "\n".join(self.pool._get("addr", min_state=PLNodeState.usable))
-         status += "\n"
+         addrs = self.pool._get("addr", min_state=PLNodeState.usable)
+         if len(addrs) > 0:
+            status = "\n".join(addrs)+"\n"
+         else:
+            status = "No usable node found.\n"
 
       return status
 

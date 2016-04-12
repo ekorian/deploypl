@@ -20,7 +20,7 @@ class IOManager(object):
    extend me
 
    """
-   DEFAULT_CONFIG_LOC="/tmp/deploypl.ini"
+   #DEFAULT_CONFIG_LOC="/tmp/deploypl.ini"
 
    def __init__(self, child=None, **kwargs):
 
@@ -113,8 +113,9 @@ class IOManager(object):
       
       self.threadlimit = int(self.config["core"]["thread_limit"])
       self.sshlimit    = int(self.config["core"]["ssh_limit"])
+      self.sshkeyloc   =     self.config["core"]["ssh_keyloc"]
       self.period      = int(self.config["core"]["probing_period"])
-      self.initialdelay = (self.config["core"]["initial_delay"] == 'yes')
+      self.initialdelay =   (self.config["core"]["initial_delay"] == 'yes')
 
       self.slice = self.config["core"]["slice"]
       self.user  = self.config["core"]["user"]
@@ -164,7 +165,7 @@ class IOManager(object):
          ch = logging.StreamHandler()
          ch.setLevel(logging.INFO if self.args.debug else logging.ERROR)
 
-      # TODO
+      # XXX
       #filehandler = logging.handlers.TimedRotatingFileHandler('/tmp/daemon.log',
       #                                 when='midnight',interval=1,backupCount=10)
       # log file handler

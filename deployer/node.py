@@ -5,10 +5,8 @@ node.py
 
 @author: K.Edeline
 """
-import threading
 import hashlib
 import enum
-import sys
 import time
 
 from collections import Counter
@@ -17,7 +15,7 @@ from pkg_resources import resource_filename
 
 from sqlalchemy import MetaData, Table, Column
 from sqlalchemy import Integer, String, Boolean, Enum
-from sqlalchemy import ForeignKey, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -97,8 +95,8 @@ class PLNode(Base): #PLNodeBase
       else:
          self._state  = PLNodeState(state)
 
-      self.kernel    = "Unknown"
-      self.os        = "Unknown"
+      self.kernel    = "UNKNOWN"
+      self.os        = "UNKNOWN"
       self.vsys      = False
       self.last_seen = None 
       self.addr      = None
@@ -320,6 +318,9 @@ class PLNodePool(object):
 
    def status(self, min_state=None, string=False):
       """
+      @param min_state consider only node with state >= min_state
+      @param string return status as a string
+
       @return node state count as a list
 
       """    
@@ -337,7 +338,12 @@ class PLNodePool(object):
          counterdict[a] = Counter([node[a] for node in pooldicts]).most_common()
 
       if string:
-         return self._status_tostr(counterdict)
+         status_str = self._status_tostr(counterdict)
+         if not status_str:
+            return "No {} node found.\n".format(str(min_state) 
+                                                if min_state else "reachable")
+         else:
+            return status_str
 
       return counterdict
 
@@ -348,6 +354,8 @@ class PLNodePool(object):
       status_str = ""
       for key, count in status.items():
          status_str += key+":\n"
+         if not count:
+            return None
          for k, v in count:
             status_str += "  "+str(k)+": "+str(v)+"\n"
          if spaced:
@@ -387,6 +395,8 @@ class PLNodePool(object):
       """
       map(node.update(), dictlist)
       'dictlist' must be ordered like self.pool
+
+      @param min_state consider only node with state >= min_state
       """
       pool = self.pool
       if min_state != None:
@@ -400,6 +410,8 @@ class PLNodePool(object):
 
    def _get(self, attribute, min_state=None, state=None):
       """
+      @param min_state consider only node with state >= min_state
+
       @return a list of nodes 'attribute'
       """
       pool = self.pool

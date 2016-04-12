@@ -5,23 +5,11 @@ poller.py
 
 @author: K.Edeline
 """
-
-import threading
 import time
-import sys
-
-from pssh import ParallelSSHClient
-from pssh.exceptions import AuthenticationException
-from pssh.exceptions import ConnectionErrorException
-from pssh.exceptions import UnknownHostException 
-from pssh.exceptions import SSHException
 
 from deployer.node import PLNodePool, PLNodeState
 from deployer.ping import ping_process, ping_parse
-
-# this lib is noisy
-import logging
-logging.getLogger("pssh").setLevel(logging.CRITICAL)
+from deployer.ssh import run_command, download, upload
 
 class Poller(PLNodePool):
    """
@@ -83,40 +71,32 @@ class Poller(PLNodePool):
       self._set("state", states)
       self.daemon.debug("ping completed")
 
-   def _ssh_cmd(self, hosts, cmd, num_retries=3, timeout=10, sudo=False):
-      """
-      run bash command via ssh and return output dict
-      """
-      client = ParallelSSHClient(hosts, user=self.slice, pool_size=self.sshlimit, 
-                                    num_retries=num_retries, timeout=timeout)
-      try:
-         output = client.run_command(cmd, stop_on_errors=False, sudo=sudo)
-      except (AuthenticationException, ConnectionErrorException) as e: ## no ssh
-         self.daemon.debug(e)
-      except: ## bad connection prevents using ssh
-         self.daemon.debug("SSH Error")
-      del client
+   def _run_command(self, hosts, cmd, timeout=10, sudo=False):
+      return run_command(hosts, self.slice, cmd, timeout=timeout,
+                                threads=self.sshlimit,
+                                keyloc=self.daemon.sshkeyloc, sudo=sudo)
 
-      return output
-
-   def _ssh(self, num_retries=3, timeout=10):
+   def _ssh(self, timeout=10):
       """
-      ssh probe
+      test if an ssh session can be established
 
       """
 
       ## Step 1. Establish ssh session
       hosts  = self._get("addr", min_state=PLNodeState.reachable)
-
+      if len(hosts) == 0:
+         self.daemon.debug("no reachable node found, stopping ...")
+         return
       self.daemon.debug("ssh probing {} nodes via PL slice {} ...".format(
                         len(hosts), self.slice))
-     
-      output = self._ssh_cmd(hosts, "pwd")
+      output = self._run_command(hosts, "mkdir -p {}".format(self.user))
+
       # if an ssh session was established, update node state
-      for host, hostdata in output.items():
-         if hostdata['exit_code'] != None: 
+      for hostdata in output:
+         host = hostdata['host']
+         if hostdata['status'] == 0:
             self._set_node(host, "state", PLNodeState.accessible)
-   
+
       self.daemon.debug("ssh probing completed")
 
    def _profile(self, num_retries=3, timeout=10):
@@ -127,28 +107,29 @@ class Poller(PLNodePool):
 
       ## Step 2. Fingerprinting
       hosts = self._get("addr", min_state=PLNodeState.accessible)
-      self.daemon.debug("start profiling {} ssh-accessible nodes".format(len(hosts)))
-      output = self._ssh_cmd(hosts, "echo 'magic'; uname -sr; cat /etc/*-release | "
-                                    "head -n 1; ls /vsys/;", sudo=True)
+      if len(hosts) == 0:
+         self.daemon.debug("no accessible node found, stopping ...")
+         return
 
-      self.daemon.error("output: {}".format(len(output)))
-      for host, hostdata in output.items():
+      self.daemon.debug("start profiling {} ssh-accessible nodes".format(len(hosts)))
+      output = self._run_command(hosts, "echo 'magic'; uname -sr; "
+                                               "cat /etc/*-release"
+                                               " | head -n 1; sudo -S ls /vsys/;",
+                                                timeout=30)
+      for hostdata in output:
+         host = hostdata['host']
          profile = {}
 
-         if hostdata['exit_code'] == 0:  
+         if hostdata['status'] in [0,1,2,3,4,5]:
 
             # Some info about the node     
-            stdout = hostdata['stdout']
+            stdout = hostdata['stdout'].splitlines()
             try:
-               if "magic" in next(stdout):
-                  profile["kernel"] = next(stdout)
-                  profile["os"]     = next(stdout)
-                  profile["vsys"]   = ("fd_tuntap.control" in next(stdout))
-                  # exhausts generator
-               for _ in stdout: pass
-            except:
-               #self.daemon.debug(profile)
-               pass
+               if "magic" in stdout[0]:
+                  profile["kernel"] = stdout[1]
+                  profile["os"]     = stdout[2]
+                  profile["vsys"]   = ("fd_tuntap.control" in stdout[3])
+            except: pass
 
             # Update node
             for k, d in profile.items():
@@ -158,7 +139,25 @@ class Poller(PLNodePool):
          else:
             self._set_node(host, "state", PLNodeState.reachable)
 
-      ## Step 3. Find common bugs
+      ## Step 3. Finding common bugs (repo, ro system, )
+      hosts = self._get("addr", min_state=PLNodeState.usable)
+      if len(hosts) == 0:
+         self.daemon.debug("no usable node found, stopping ...")
+
+      self.daemon.debug("chasing bugs on {} nodes".format(len(hosts)))
+      output = self._run_command(hosts, "yum install -y --nogpgcheck python",
+                                    sudo=True, timeout=120)
+      for hostdata in output:
+         host = hostdata['host']
+
+         if hostdata['status'] == 0:
+            stdout = hostdata['stdout']
+            if "metalink" in stdout:
+               self.daemon.debug("yum error") #XXX fix repo
+               self.daemon.debug(str(hostdata))
+         else:
+            self.daemon.debug(str(hostdata))
+            self._set_node(host, "state", PLNodeState.reachable)
 
       self.daemon.debug("node profiling completed")
 
@@ -169,13 +168,15 @@ class Poller(PLNodePool):
       start = time.time()      
       
       self._ping()
+      self.update()
+
       self._ssh()   
+      self.update()
+
       self._profile()
 
       ## XXX if reseted or first time
 
-      # schedule next poll
-      # XXX
       self.daemon.debug("polling completed")
 
       self.update()
