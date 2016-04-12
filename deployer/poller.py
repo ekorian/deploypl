@@ -137,7 +137,7 @@ class Poller(PLNodePool):
             self._set_node(host, "state", PLNodeState.usable)
 
          else:
-            self._set_node(host, "state", PLNodeState.reachable)
+            self._set_node(host, "state", PLNodeState.accessible)
 
       ## Step 3. Finding common bugs (repo, ro system, )
       hosts = self._get("addr", min_state=PLNodeState.usable)
