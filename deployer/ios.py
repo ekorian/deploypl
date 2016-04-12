@@ -7,12 +7,10 @@ ios.py
 """
 
 import sys
-import os
 import argparse
 import configparser
 import logging
 import shutil
-
 
 class IOManager(object):
    """
@@ -53,8 +51,8 @@ class IOManager(object):
          Used mostly to provide the location of the config file.
       """
 
-      parser = argparse.ArgumentParser(description='PlanetLab deployer')
-      parser.add_argument('cmd', help='start|stop|restart|status', type=str,
+      parser = argparse.ArgumentParser(description='PlanetLab C&C server')
+      parser.add_argument('cmd', type=str,
                            choices=["start", "stop", "restart", "status"])
 
       parser.add_argument('-l' , '--log-file', type=str, default="deploypl.log",

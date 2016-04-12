@@ -53,20 +53,18 @@ class PLNodeState(enum.Enum):
    def __gt__(self, other):
       return self.value >  other.value
    def __ge__(self, other):
-      return self.value >= other.value
-      
+      return self.value >= other.value     
 
-class PLNode(Base): #PLNodeBase
+class PLNode(Base):
    """
    PLNode
    
    """
-
-   # SQLAlchemy attributes
+   ## SQLAlchemy attributes
    __tablename__  = "node"
    id        = Column(Integer, primary_key=True)
    name      = Column(String(255))
-   addr      = Column(String(64)) # XXX
+   addr      = Column(String(64))
    authority = Column(String(4))
    state     = Column(Integer)
    kernel    = Column(String(255))
@@ -82,7 +80,7 @@ class PLNode(Base): #PLNodeBase
       keys = PLNode.__table__.columns.keys()
       keys.remove('id')
       keys.remove('addr')
-      keys.remove('name') # XXX
+      keys.remove('name')
       return keys
    
    def __init__(self, name, authority, state=None):
@@ -147,7 +145,7 @@ class PLNode(Base): #PLNodeBase
          
    def _update__state(self, state):
       """
-      update node state and lastseen
+      update node state and lastseen ts
       """
       if state > PLNodeState.unreachable:
          self._update_time()
@@ -202,9 +200,8 @@ class PLNodePool(object):
       @param raw_file contains copypaste of nodes listed in slice from PL website
       """
       self.daemon = daemon
-      self.pool = []
-
-      self.db_loc = resource_filename(__name__, 'deploypl.sqlite')#XXX init without db
+      self.pool   = []
+      self.db_loc = resource_filename(__name__, 'deploypl.sqlite')
       
       self._merge(rawfile)
 
@@ -234,9 +231,9 @@ class PLNodePool(object):
 
       # Queries
       self.daemon.debug("Performing {} DNS lookups".format(len(pool)))
-      names = [node.name for node in pool]
+      names    = [node.name for node in pool]
       resolver = AsyncResolver(names)
-      res = resolver.resolveA()
+      res      = resolver.resolveA()
 
       # Filter out invalid addresses
       for node in pool:
@@ -255,9 +252,7 @@ class PLNodePool(object):
 
       @pre: all node from self.node are already present in the database
       """
-      # Update database
       with session_scope(self.daemon, self.db_loc) as session:
-         #dbpool   = self._load_db(session)
          for node in self.pool:
             node._update_state()
             session.query(PLNode).filter_by(id=node.id).update(node.to_dict())

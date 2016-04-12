@@ -11,16 +11,16 @@ from deployer.node import PLNodePool, PLNodeState
 from deployer.ping import ping_process, ping_parse
 from deployer.ssh import run_command, download, upload
 
-class Poller(PLNodePool):
+class PLPoller(PLNodePool):
    """
-   Poller
+   PLPoller
 
    """
 
    def __init__(self, daemon, plslice=None, user=None, rawfile=None, 
                       initialdelay=0, period=3600,
                       threadlimit=10, sshlimit=10):
-      super(Poller, self).__init__(daemon, rawfile=rawfile)
+      super(PLPoller, self).__init__(daemon, rawfile=rawfile)
 
       self.initialdelay = 0
       self.period  = period
@@ -113,9 +113,9 @@ class Poller(PLNodePool):
 
       self.daemon.debug("start profiling {} ssh-accessible nodes".format(len(hosts)))
       output = self._run_command(hosts, "echo 'magic'; uname -sr; "
-                                               "cat /etc/*-release"
-                                               " | head -n 1; sudo -S ls /vsys/;",
-                                                timeout=30)
+                                        "cat /etc/*-release"
+                                        " | head -n 1; sudo -S ls /vsys/;",
+                                        timeout=30)
       for hostdata in output:
          host = hostdata['host']
          profile = {}
@@ -157,7 +157,7 @@ class Poller(PLNodePool):
                self.daemon.debug(str(hostdata))
          else:
             self.daemon.debug(str(hostdata))
-            self._set_node(host, "state", PLNodeState.reachable)
+            self._set_node(host, "state", PLNodeState.accessible)
 
       self.daemon.debug("node profiling completed")
 
@@ -184,9 +184,9 @@ class Poller(PLNodePool):
       return time.time() - start
 
 
-class PollerException(Exception):
+class PLPollerException(Exception):
    """
-   PollerException(Exception)
+   PLPollerException(Exception)
    """
 
    def __init__(self, value):

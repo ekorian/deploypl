@@ -50,7 +50,7 @@ class AsyncResolver(object):
 
         return resolved_hosts
 
-def is_valid_ipv4_address(address): # XXX
+def is_valid_ipv4_address(address):
     try:
         socket.inet_pton(socket.AF_INET, address)
     except AttributeError:  # no inet_pton here, sorry

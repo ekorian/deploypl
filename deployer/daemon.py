@@ -9,20 +9,10 @@ daemon.py
 import sys
 import os
 import pwd
-import grp
 import time
 import atexit
-import logging
-import logging.handlers
 
 from signal import SIGTERM
-
-class Launcher(object):
-   """
-   Launcher
-   """
-   def __init__(self):
-      pass
 
 class Daemon(object):
    """
@@ -32,7 +22,7 @@ class Daemon(object):
    def __init__(self, pidfile='/var/run/mydaemon.pid', stdin='/dev/null', 
                      stdout='/var/log/deploypl.log', 
                      stderr='/var/log/deploypl.log',
-                     name='daemon', **kwargs): # TODO: replace with /dev/null
+                     name='daemon', **kwargs):
       super().__init__(**kwargs)
       self.stdin    = stdin
       self.stdout   = stdout
@@ -41,6 +31,7 @@ class Daemon(object):
       self.name     = name
 
       self.cwd      = os.getcwd()
+      self.username = os.getenv("SUDO_USER")
       self._dropped = False
 
    def _fork(self):
@@ -99,7 +90,6 @@ class Daemon(object):
            return
 
        # Get the uid/gid from the name
-       self.username = os.getenv("SUDO_USER")
        pwnam         = pwd.getpwnam(self.username)
 
        # Remove group privileges

@@ -6,17 +6,12 @@ deloypl.py
 @author: K.Edeline
 """
 import sys
-import os
 import time
 
-import http
-from http import client
-
-import deployer.node
-from deployer.node import PLNodeState
 from deployer.ios import IOManager
 from deployer.daemon import Daemon
-from deployer.poller import Poller
+from deployer.poller import PLPoller
+from deployer.node import PLNodeState, PLNodePool, PLNodePoolException
 
 class PLDeployer(IOManager, Daemon):
    """
@@ -26,13 +21,13 @@ class PLDeployer(IOManager, Daemon):
 
    def __init__(self):
       super(PLDeployer, self).__init__(child=self, 
-                              pidfile='/var/run/deploypl.pid',
-                              stdout='/home/ko/Desktop/gits/own/deploypl/deploypl.log', 
-                              stderr='/home/ko/Desktop/gits/own/deploypl/deploypl.log',
-                              name='deploypl')
+                      pidfile='/var/run/deploypl.pid',
+                      stdout='/home/ko/Desktop/gits/own/deploypl/deploypl.log', 
+                      stderr='/home/ko/Desktop/gits/own/deploypl/deploypl.log',
+                      name='deploypl')
       self.load_inputs()
       
-      self.pool = None # XXX fix name
+      self.pool = None
 
    def load(self):
       """
@@ -41,7 +36,7 @@ class PLDeployer(IOManager, Daemon):
       """
       self.load_outputs()
       ## warning, ns lookups here
-      self.pool = Poller(self, rawfile=self._rawfile, user=self.user, 
+      self.pool = PLPoller(self, rawfile=self._rawfile, user=self.user, 
                                period=self.period, threadlimit=self.threadlimit,
                                sshlimit=self.sshlimit, plslice=self.slice,
                                initialdelay=self.initialdelay)
@@ -71,7 +66,6 @@ class PLDeployer(IOManager, Daemon):
       Returns a string that describes current node pool state
       """
       if self.args.vverbose:
-         #status = "\n".join(self.pool._get("addr"))+"\n"#
          status = self.pool.status(string=True)
       elif self.args.verbose:
          status = self.pool.status(min_state=PLNodeState.usable, string=True)
@@ -96,14 +90,10 @@ class PLDeployer(IOManager, Daemon):
 
       # Load node pool & print status
       try:
-         self.pool = Poller(self)      
+         self.pool = PLNodePool(self)      
          sys.stdout.write(self.status_str())
-      except deployer.node.PLNodePoolException:
-         sys.stdout.write("empty\n")
+      except PLNodePoolException:
+         sys.stdout.write("No usable node found.\n")
 
       return 0
-
-
-      
-
 
