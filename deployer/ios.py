@@ -61,14 +61,15 @@ class IOManager(object):
                          #default=IOManager.DEFAULT_CONFIG_LOC,
                          help='configuration file location')
       parser.add_argument('-d' , '--debug', action='store_true',
-                         help='increase log output level') 
+                         help='increase log output level')
       parser.add_argument('-v' , '--verbose', action='store_true',
-                         help='status print node descriptions') 
+                         help='status print node descriptions')
       parser.add_argument('-vv' , '--vverbose', action='store_true',
-                         help='print info about non-usable nodes') 
+                         help='print info about non-usable nodes')
+      parser.add_argument('-n' , '--names', action='store_true',
+                         help='status print node names, not addresses')
 
       self.args = parser.parse_args()
-
       return self.args
 
    ########################################################
@@ -94,7 +95,6 @@ class IOManager(object):
       #   shutil.copyfile(self.args.config, IOManager.DEFAULT_CONFIG_LOC)
       # Load config
       self._load_config()
-
       return self.config
 
    def _load_config(self):

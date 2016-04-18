@@ -74,6 +74,17 @@ def ping_parse(ping_output):
 def _get_match_groups(ping_output, regex):
    match = regex.search(ping_output)
    if not match:
-      raise Exception('Invalid PING output:\n' + ping_output)
+      raise PingException('Non standard ping output:\n' + ping_output)
    return match.groups()
+
+class PingException(Exception):
+   """
+   PingException(Exception)
+   """
+
+   def __init__(self, value):
+      self.value = value
+
+   def __str__(self):
+      return repr(self.value)
 

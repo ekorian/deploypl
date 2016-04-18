@@ -66,13 +66,19 @@ class PLDeployer(IOManager, Daemon):
       Returns a string that describes current node pool state
       """
       if self.args.vverbose:
+         ## Print profile of all nodes
          status = self.pool.status(string=True)
+
       elif self.args.verbose:
+         ## Print profile of usable nodes
          status = self.pool.status(min_state=PLNodeState.usable, string=True)
+
       else:
-         addrs = self.pool._get("addr", min_state=PLNodeState.usable)
-         if len(addrs) > 0:
-            status = "\n".join(addrs)+"\n"
+         ## Print list of usable nodes
+         attribute = "name" if self.args.names else "addr"
+         nodes = self.pool._get(attribute, min_state=PLNodeState.usable)
+         if len(nodes) > 0:
+            status = "\n".join(nodes)+"\n"
          else:
             status = "No usable node found.\n"
 

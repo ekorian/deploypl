@@ -9,11 +9,12 @@ import hashlib
 import enum
 import time
 
+from datetime import datetime
 from collections import Counter
 from contextlib import contextmanager
 from pkg_resources import resource_filename
 
-from sqlalchemy import MetaData, Table, Column
+from sqlalchemy import MetaData, Table, Column, DateTime
 from sqlalchemy import Integer, String, Boolean, Enum
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -66,22 +67,23 @@ class PLNode(Base):
    name      = Column(String(255))
    addr      = Column(String(64))
    authority = Column(String(4))
-   state     = Column(Integer)
+   state     = Column(Integer) # XXX Solve double state problem
    kernel    = Column(String(255))
    os        = Column(String(255))
    vsys      = Column(Boolean)
-   #last_seen = Column(Time)
+   last_seen = Column(DateTime)
 
    @staticmethod
-   def keys():
+   def columns(data_only=True):
       """
-      Returns a list of key attributes (keys)
+      Returns column names of data attributes (not indexes)
+         Skips id, name, addr, last_seen
       """
       keys = PLNode.__table__.columns.keys()
-      keys.remove('id')
-      keys.remove('addr')
-      keys.remove('name')
-      return keys
+      to_remove = ['id']
+      if data_only:
+         to_remove += ['addr', 'name', 'last_seen']
+      return [c for c in keys if c not in to_remove]
    
    def __init__(self, name, authority, state=None):
       self.name      = name
@@ -92,17 +94,17 @@ class PLNode(Base):
          self._state  = PLNodeState.unreachable
       else:
          self._state  = PLNodeState(state)
+      self._update_state()
 
+      ## set default node values
       self.kernel    = "UNKNOWN"
       self.os        = "UNKNOWN"
+      self.last_seen = datetime(1, 1, 1, 0, 0)
       self.vsys      = False
-      self.last_seen = None 
       self.addr      = None
-   
-      self._update_state()
-           
+
    def _update_time(self):
-      self.last_seen = time.time()
+      self.last_seen = datetime.utcnow()
 
    def _update_state(self):
       self.state = self._state.value
@@ -113,14 +115,12 @@ class PLNode(Base):
       return self
 
    def to_dict(self, enum=False):
-      return { "name"      : self.name,
-               "addr"      : self.addr,
-               "authority" : self.authority,
-               "state"     : self._state if enum else self.state,
-               "kernel"    : self.kernel,
-               "os"        : self.os,
-               "vsys"      : self.vsys,
-             }
+      d = {k : getattr(self, k) 
+               for k in self.columns(data_only=False)}
+      if enum:
+         d["state"] = self._state
+      
+      return d
 
    def update(self, to_update):
       """
@@ -128,20 +128,10 @@ class PLNode(Base):
       @param to_update {'name': value}
       """
       for k, d in to_update.items():
-         if   k == "name":
-            self.name      = d
-         elif k == "addr":
-            self.addr      = d
-         elif k == "authority":
-            self.authority = d
-         elif k == "state":
+         if "state" in k:
             self._update__state(d)
-         elif k == "kernel":
-            self.kernel    = d
-         elif k == "os":
-            self.os        = d
-         elif k == "vsys":
-            self.vsys      = d
+         else:
+            setattr(self, k, d)
          
    def _update__state(self, state):
       """
@@ -324,7 +314,7 @@ class PLNodePool(object):
       else:
          pool = self.pool
 
-      attributes  = PLNode.keys()
+      attributes  = PLNode.columns()
       counterdict = {}
       pooldicts   = [n.to_dict(enum=True) for n in pool]
 
@@ -415,17 +405,10 @@ class PLNodePool(object):
       elif state != None:
          pool = self._filter_eq(state)
 
-      _switch = { 
-         "name"      : lambda: [node.name      for node in pool],
-         "addr"      : lambda: [node.addr      for node in pool],
-         "authority" : lambda: [node.authority for node in pool],
-         "state"     : lambda: [node._state    for node in pool],
-         "kernel"    : lambda: [node.kernel    for node in pool],
-         "os"        : lambda: [node.os        for node in pool],
-         "vsys"      : lambda: [node.vsys      for node in pool],
-             
-      }
-      return _switch[attribute]()
+      if attribute == "state":
+         attribute = "_state"
+
+      return [getattr(node, attribute) for node in pool]
 
 class PLNodePoolException(Exception):
    """

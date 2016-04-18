@@ -153,7 +153,7 @@ class PLPoller(PLNodePool):
          if hostdata['status'] == 0:
             stdout = hostdata['stdout']
             if "metalink" in stdout:
-               self.daemon.debug("yum error") #XXX fix repo
+               self.daemon.debug("yum error") #XXX fix repo ?
                self.daemon.debug(str(hostdata))
          else:
             self.daemon.debug(str(hostdata))
