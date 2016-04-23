@@ -1,0 +1,8 @@
+; packages.txt
+;
+; List yum packages to be installed on usable nodes, one per line
+;
+
+python
+libpcap
+
