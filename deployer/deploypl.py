@@ -56,9 +56,9 @@ class PLDeployer(IOManager, Daemon):
       time.sleep(self.initialdelay)
       while True:
          self.pool.poll()
+         self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
          time.sleep(self.period)
 
-      self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
       """"""
 
    def status_str(self, spaced=False):
@@ -96,10 +96,10 @@ class PLDeployer(IOManager, Daemon):
 
       # Load node pool & print status
       try:
-         self.pool = PLNodePool(self)      
+         self.pool = PLNodePool(self)
          sys.stdout.write(self.status_str())
       except PLNodePoolException:
-         sys.stdout.write("No usable node found.\n")
+         sys.stdout.write("No node found.\n")
 
       return 0
 

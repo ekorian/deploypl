@@ -8,6 +8,7 @@ node.py
 import hashlib
 import enum
 import time
+import sys
 
 from datetime import datetime
 from collections import Counter
@@ -15,7 +16,10 @@ from contextlib import contextmanager
 from pkg_resources import resource_filename
 
 from sqlalchemy import MetaData, Table, Column, DateTime
-from sqlalchemy import Integer, String, Boolean, Enum
+from sqlalchemy import Integer, String, Boolean
+from sqlalchemy.types import SchemaType, TypeDecorator
+from sqlalchemy.types import Enum as SAEnum
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
@@ -25,36 +29,89 @@ from deployer.resolver import AsyncResolver, is_valid_ipv4_address
 
 Base = declarative_base()
 
-class PLNodeState(enum.Enum):
+class EnumType(SchemaType, TypeDecorator):
+    def __init__(self, enum, name):
+        self.enum = enum
+        self.name = name
+        members = (member.value for member in enum)
+        kwargs = {'name': name}
+
+        self.impl = SAEnum(*members, **kwargs)
+
+    def _set_table(self, table, column):
+        self.impl._set_table(table, column)
+
+    def copy(self):
+        return EnumType(self.enum, self.name)
+
+    def process_bind_param(self, enum_instance, dialect):
+        if enum_instance is None:
+            return None
+
+        return enum_instance.value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+
+        return self.enum(value)
+
+class DBEnum(enum.Enum):
+    def __init__(self, db_repr, description=None):
+        if description is None:
+            description = db_repr
+            db_repr = self.name
+
+        self._value_ = db_repr
+        self.description = description
+
+    @classmethod
+    def as_type(cls, name):
+        return EnumType(cls, name)
+
+    @classmethod
+    def get_description_mapping(cls):
+        return dict((member.name, member.description) for member in cls)
+
+## PLNodeState order for comparison
+PLNodeState_order = {"unreachable" : 1,
+                     "reachable"  : 2,
+                     "accessible"  : 3,
+                     "usable"      : 4
+                     }
+
+class PLNodeState(DBEnum):
    """
    PLNodeState
 
+   XXX: when sqlalchemy 1.1 get released, replace by native
+   Python34 enum support.
    """
    ## usable, the node is accessible 
-   usable      = 4
+   usable      = "usable"
 
    ## accessible, ssh session was established to the node but one
    ## mighty PlanetLab bug prevents using it properly
-   accessible  = 3
+   accessible  = "accessible"
 
    ## reachable, the node is answering to ping requests
    ## but no ssh session can be established
-   reachable   = 2
+   reachable   = "reachable"
 
    ## unreachable, node is not answering ping requests, 
    ## probably offline or changed name
-   unreachable = 1
+   unreachable = "unreachable"
 
    def __str__(self):
       return self.name
    def __lt__(self, other):
-      return self.value <  other.value
+      return PLNodeState_order[self.value] <  PLNodeState_order[other.value]
    def __le__(self, other):
-      return self.value <= other.value
+      return PLNodeState_order[self.value] <= PLNodeState_order[other.value]
    def __gt__(self, other):
-      return self.value >  other.value
+      return PLNodeState_order[self.value] >  PLNodeState_order[other.value]
    def __ge__(self, other):
-      return self.value >= other.value     
+      return PLNodeState_order[self.value] >= PLNodeState_order[other.value]
 
 class PLNode(Base):
    """
@@ -67,7 +124,7 @@ class PLNode(Base):
    name      = Column(String(255))
    addr      = Column(String(64))
    authority = Column(String(4))
-   state     = Column(Integer) # XXX Solve double state problem
+   state     = Column(PLNodeState.as_type("state"), nullable=False)
    kernel    = Column(String(255))
    os        = Column(String(255))
    vsys      = Column(Boolean)
@@ -91,10 +148,9 @@ class PLNode(Base):
       self.authority = authority
 
       if state is None:
-         self._state  = PLNodeState.unreachable
+         self.state  = PLNodeState.unreachable
       else:
-         self._state  = PLNodeState(state)
-      self._update_state()
+         self.state  = PLNodeState(state)
 
       ## set default node values
       self.kernel    = "UNKNOWN"
@@ -106,32 +162,21 @@ class PLNode(Base):
    def _update_time(self):
       self.last_seen = datetime.utcnow()
 
-   def _update_state(self):
-      self.state = self._state.value
-      return self
-
-   def _update_state_reverse(self):
-      self._state = PLNodeState(self.state)
-      return self
-
-   def to_dict(self, enum=False):
+   def to_dict(self):
       d = {k : getattr(self, k) 
                for k in self.columns(data_only=False)}
-      if enum:
-         d["state"] = self._state
-      
       return d
 
    def update(self, to_update):
       """
       Update node state from value of to_update 
       @param to_update {'name': value}
+      self.__dict__.update( kwargs )
       """
       for k, d in to_update.items():
          if "state" in k:
             self._update__state(d)
-         else:
-            setattr(self, k, d)
+         setattr(self, k, d)
          
    def _update__state(self, state):
       """
@@ -139,7 +184,6 @@ class PLNode(Base):
       """
       if state > PLNodeState.unreachable:
          self._update_time()
-      self._state = state
 
    def _id(self):
       return int(hashlib.sha1(bytes(self.name, "ascii")).hexdigest(), 
@@ -147,7 +191,7 @@ class PLNode(Base):
    def __str__(self):
       return "{} node {} is in state {}".format(self.authority, 
                                                 self.name, 
-                                                self._state)
+                                                self.state)
    def __eq__(self, other):
       return (isinstance(other, self.__class__)
             and self.id == other.id)
@@ -244,7 +288,6 @@ class PLNodePool(object):
       """
       with session_scope(self.daemon, self.db_loc) as session:
          for node in self.pool:
-            node._update_state()
             session.query(PLNode).filter_by(id=node.id).update(node.to_dict())
 
       self.daemon.debug("database updated")
@@ -299,7 +342,7 @@ class PLNodePool(object):
       Load nodes from database
       """
       query = session.query(PLNode).all()
-      return [n._update_state_reverse() for n in query]
+      return [n for n in query]
 
    def status(self, min_state=None, string=False):
       """
@@ -316,7 +359,7 @@ class PLNodePool(object):
 
       attributes  = PLNode.columns()
       counterdict = {}
-      pooldicts   = [n.to_dict(enum=True) for n in pool]
+      pooldicts   = [n.to_dict() for n in pool]
 
       # count attributes
       for a in attributes:
@@ -352,10 +395,10 @@ class PLNodePool(object):
       return "\n".join([str(node) for node in self.pool])
 
    def _filter_eq(self, state):
-      return list(filter(lambda n: n._state == state, self.pool))
+      return list(filter(lambda n: n.state == state, self.pool))
 
    def _filter_ge(self, state):
-      return list(filter(lambda n: n._state >= state, self.pool)) 
+      return list(filter(lambda n: n.state >= state, self.pool)) 
 
    def _set(self, attribute, attributelist):
       """
@@ -404,9 +447,6 @@ class PLNodePool(object):
          pool = self._filter_ge(min_state)
       elif state != None:
          pool = self._filter_eq(state)
-
-      if attribute == "state":
-         attribute = "_state"
 
       return [getattr(node, attribute) for node in pool]
 

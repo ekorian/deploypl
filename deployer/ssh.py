@@ -42,7 +42,9 @@ class SSHArgs:
       except KeyError as err:
          raise AttributeError(key)
       
-def upload(hosts, loginname, localdirs, remotedir, timeout=10, threads=50, port=None, recursive=False, keyloc=None):
+def upload(hosts, loginname, localdirs, remotedir, timeout=10, 
+           threads=50, port=None, recursive=False, keyloc=None):
+
    opts = SSHArgs({'verbose': None, 'askpass': None, 'options': None, 
                    'errdir': None, 'timeout': timeout, 'recursive': recursive, 
                    'user': loginname, 'par': threads, 'extra': None, 
