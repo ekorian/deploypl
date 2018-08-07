@@ -1,4 +1,4 @@
 sqlalchemy
 pssh
-adns
+adns-python
 

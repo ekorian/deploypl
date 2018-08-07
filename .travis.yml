@@ -2,6 +2,9 @@ language: python
 python:
  - "3.5"
  - "3.6"
- - "3.7"
+ - "3.7-dev"
+before_install:
+ - sudo apt-get update -qq
+ - sudo apt-get install libadns1 libadns1-dev adns-tools
 install:
   - pip install -r requirements.txt
