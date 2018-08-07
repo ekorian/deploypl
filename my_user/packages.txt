@@ -4,5 +4,6 @@
 ;
 
 python
-libpcap
+libpcap-dev
+libglib2.0-dev
 

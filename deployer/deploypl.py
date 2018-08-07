@@ -22,8 +22,8 @@ class PLDeployer(IOManager, Daemon):
    def __init__(self):
       super(PLDeployer, self).__init__(child=self, 
                       pidfile='/var/run/deploypl.pid',
-                      stdout='/home/ko/Desktop/gits/own/deploypl/deploypl.log', 
-                      stderr='/home/ko/Desktop/gits/own/deploypl/deploypl.log',
+                      stdout='/var/log/deploypl.log', 
+                      stderr='/var/log/deploypl.log',
                       name='deploypl')
       self.load_inputs()
       
@@ -49,6 +49,7 @@ class PLDeployer(IOManager, Daemon):
       """
       # Load env
       self.load()
+      return
       self.debug(self.pool.status())
       self.debug("loading completed, starting to probe ...")
 
@@ -56,6 +57,8 @@ class PLDeployer(IOManager, Daemon):
       time.sleep(self.initialdelay)
       while True:
          self.pool.poll()
+         self.pool.install_packages(self.pkglist)
+         self.pool.sync_data(self.userdir)
          self.info("Deploying on slice "+self.config["planet-lab.eu"]["slice"])
          time.sleep(self.period)
 

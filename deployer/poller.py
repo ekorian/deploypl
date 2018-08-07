@@ -152,9 +152,9 @@ class PLPoller(PLNodePool):
 
          if hostdata['status'] == 0:
             stdout = hostdata['stdout']
-            if "metalink" in stdout:
-               self.daemon.debug("yum error") #XXX fix repo ?
-               self.daemon.debug(str(hostdata))
+            #if "metalink" in stdout:
+            #   self.daemon.debug("yum error") #XXX fix repo ?
+            #   self.daemon.debug(str(hostdata))
          else:
             self.daemon.debug(str(hostdata))
             self._set_node(host, "state", PLNodeState.accessible)
@@ -163,7 +163,8 @@ class PLPoller(PLNodePool):
 
    def poll(self):
       """
-      Poll nodepool
+      Poll nodepool, retreive node pool status&profile and
+      update database.
       """
       start = time.time()      
       
@@ -174,14 +175,28 @@ class PLPoller(PLNodePool):
       self.update()
 
       self._profile()
-
-      ## XXX if reseted or first time
-
-      self.daemon.debug("polling completed")
-
       self.update()
 
+      ## XXX if reseted or first time
+      self.daemon.debug("polling completed")
+
       return time.time() - start
+
+   def install_packages(self, pkgs):
+      """
+      install_packages
+        
+      @param pkgs list of yum packages         
+      """
+      pass
+
+   def sync_data(self, dirloc):
+      """
+      sync_data
+
+      @dirloc location of directory to be rsynced to all nodes
+      """
+      pass
 
 
 class PLPollerException(Exception):

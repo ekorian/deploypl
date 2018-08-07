@@ -15,7 +15,7 @@
 ## Dependencies
    - sqlalchemy
    - pssh (pip install pssh or git clone http://code.google.com/p/parallel-ssh/)
-   - python3-adns (pip install adns)
+   - adns, python3-adns (https://github.com/trolldbois/python3-adns/)
 
 ## Sample output
 ##### List nodes in usable state 

@@ -75,10 +75,10 @@ class DBEnum(enum.Enum):
 
 ## PLNodeState order for comparison
 PLNodeState_order = {"unreachable" : 1,
-                     "reachable"  : 2,
+                     "reachable"   : 2,
                      "accessible"  : 3,
                      "usable"      : 4
-                     }
+                    }
 
 class PLNodeState(DBEnum):
    """
@@ -87,7 +87,7 @@ class PLNodeState(DBEnum):
    XXX: when sqlalchemy 1.1 get released, replace by native
    Python34 enum support.
    """
-   ## usable, the node is accessible 
+   ## usable, the node is accessible and can be used for experiments
    usable      = "usable"
 
    ## accessible, ssh session was established to the node but one
@@ -102,8 +102,6 @@ class PLNodeState(DBEnum):
    ## probably offline or changed name
    unreachable = "unreachable"
 
-   def __str__(self):
-      return self.name
    def __lt__(self, other):
       return PLNodeState_order[self.value] <  PLNodeState_order[other.value]
    def __le__(self, other):

@@ -19,6 +19,7 @@ class IOManager(object):
 
    """
    #DEFAULT_CONFIG_LOC="/tmp/deploypl.ini"
+   PKG_FILE = "packages.txt"
 
    def __init__(self, child=None, **kwargs):
 
@@ -102,21 +103,40 @@ class IOManager(object):
       Load configuration
       """
       
+      self.slice = self.config["core"]["slice"]
+      self.user  = self.config["core"]["user"]
+      
       # PL settings
       self._nodedir = self._to_absolute(self.config["core"]["nodes_dir"])
       self._datadir = self._to_absolute(self.config["core"]["data_dir"])
       self._logdir  = self._to_absolute(self.config["core"]["log_dir"])
       self._rawfile = self._to_absolute(self.config["core"]["raw_nodes"], 
                                           root=self._nodedir)
+      self.userdir  = self._to_absolute(self.user, root=self._logdir)
+      self.pkgfile  = self._to_absolute(IOManager.PKG_FILE, root=self.userdir)
       
-      self.threadlimit = int(self.config["core"]["thread_limit"])
-      self.sshlimit    = int(self.config["core"]["ssh_limit"])
-      self.sshkeyloc   =     self.config["core"]["ssh_keyloc"]
-      self.period      = int(self.config["core"]["probing_period"])
-      self.initialdelay =   (self.config["core"]["initial_delay"] == 'yes')
+      self.threadlimit  = int(self.config["core"]["thread_limit"])
+      self.sshlimit     = int(self.config["core"]["ssh_limit"])
+      self.sshkeyloc    =     self.config["core"]["ssh_keyloc"]
+      self.period       = int(self.config["core"]["probing_period"])
+      self.initialdelay =    (self.config["core"]["initial_delay"] == 'yes')
 
-      self.slice = self.config["core"]["slice"]
-      self.user  = self.config["core"]["user"]
+      self._package_list()
+
+   def _package_list(self):
+      """
+      load pkg list from file
+      """
+      self.pkglist = []
+      if not self.userdir:
+         return
+   
+      def pkgs(line):
+         return (line and not line.startswith(';'))
+      
+      with open(self.pkgfile, 'r') as f:
+         lines        = map(str.rstrip, f.readlines())
+         self.pkglist = list(filter(pkgs, lines))
 
    def _to_absolute(self, path, root=None):
       """
